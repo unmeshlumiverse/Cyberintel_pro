@@ -1,0 +1,23 @@
+{
+  "hiral@lumiversesolutions.com": {
+    "email": "hiral@lumiversesolutions.com",
+    "hash": "346e8f5a8d69f89923e3b42d13977fbeddcd427b4dc332cb394931479d9903523d2db4a071fefd604dd7523df50fd6524b71f1f550eba7cf9f1d9b5dce830079",
+    "salt": "8604aaabcfd9ac85c78720c97866774d",
+    "created_at": "2026-05-30T04:29:08.461Z",
+    "id": "3bd74e91-1742-4bfe-a91a-812651474e66"
+  },
+  "ba@lumiversesolutions.com": {
+    "email": "ba@lumiversesolutions.com",
+    "hash": "c7356a138e5a2b4b8c04071ea45fa6b8658f3b78d559f2cbbce71298a53b0aa6c704fc35f855a9071bb78f49bf3783761f39e1ac76672144a5af9b5c6aa86b89",
+    "salt": "609060ba0f207949c06cdee752639daa",
+    "created_at": "2026-06-04T09:39:57.796Z",
+    "id": "9ce1832c-e942-45de-b3b6-d0ca7a06b7f6"
+  },
+  "amar.thakare@lumiversesolutions.com": {
+    "email": "amar.thakare@lumiversesolutions.com",
+    "hash": "63b539b92db92a6e924667ec5a7d474b9c0996d35d245219de06024b1b1d89c67b23486894009f2221f45b13e54edab2b322e74e0ffb433c771c842a8429e986",
+    "salt": "7d0621402bda4b448a862a6d21711415",
+    "created_at": "2026-06-08T04:41:02.885Z",
+    "id": "a52bf5bd-9249-4d86-93e2-a0f009845a39"
+  }
+}

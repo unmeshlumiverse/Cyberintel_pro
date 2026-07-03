@@ -1,0 +1,15 @@
+{
+  "name": "cyberintel-pro",
+  "version": "15.0.0",
+  "description": "CyberIntel Pro — Lumiverse Solutions Enterprise Security Intelligence",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "pg": "^8.21.0"
+  }
+}
