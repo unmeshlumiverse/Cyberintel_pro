@@ -51,7 +51,11 @@ function hashPassword(password, salt) {
   );
 }
 function makeToken(payload, secret) {
-  const JWT_SECRET = secret || process.env.JWT_SECRET || 'lumiverse-cyberintel-secret-2026';
+  const JWT_SECRET = secret || process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+    throw new Error("JWT_SECRET environment variable is required");
+}
   const h = Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url');
   const b = Buffer.from(JSON.stringify({...payload, iat:Date.now(), exp:Date.now()+30*24*60*60*1000})).toString('base64url');
   const s = crypto.createHmac('sha256', JWT_SECRET).update(h+'.'+b).digest('base64url');
