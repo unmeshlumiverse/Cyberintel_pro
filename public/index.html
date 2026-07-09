@@ -1233,6 +1233,10 @@ function _renderDecisionMakers(d, scan) {
 
   // ── badge helpers ────────────────────────────────────────────────
   const confBadge = c => {
+    if (c.source==='hunter' && c.accept_all)
+      return `<span style="display:inline-block;padding:2px 10px;border-radius:20px;font-size:9px;font-weight:700;font-family:'IBM Plex Mono',monospace;background:#a1620022;color:#fbbf24;border:1px solid #a1620055;white-space:nowrap">⚠ CATCH-ALL</span>`;
+    if (c.source==='hunter' && c.confidence>=80)
+      return `<span style="display:inline-block;padding:2px 10px;border-radius:20px;font-size:9px;font-weight:700;font-family:'IBM Plex Mono',monospace;background:#15803d22;color:#4ade80;border:1px solid #15803d55;white-space:nowrap">✅ ${c.confidence}%&nbsp;HUNTER</span>`;
     if (c.valid && c.confidence >= 90)
       return `<span style="display:inline-block;padding:2px 10px;border-radius:20px;font-size:9px;font-weight:700;font-family:'IBM Plex Mono',monospace;background:#15803d22;color:#4ade80;border:1px solid #15803d55;white-space:nowrap">✅ ${c.confidence}%&nbsp;VERIFIED</span>`;
     if (c.confidence >= 40)
@@ -1241,7 +1245,7 @@ function _renderDecisionMakers(d, scan) {
   };
 
   const srcChip = s => {
-    const m={website:['#3cd7ff','WEBSITE'],gemini_search:['#a78bfa','AI+SEARCH'],pattern_generated:['#6b7280','PATTERN']};
+    const m={hunter:['#22c55e','HUNTER.IO'],website:['#3cd7ff','WEBSITE'],gemini_search:['#a78bfa','AI-GUESS'],pattern_generated:['#6b7280','PATTERN']};
     const [col,lbl]=m[s]||['#6b7280',s||'—'];
     return `<span style="display:inline-block;padding:1px 7px;border-radius:4px;font-size:8px;font-weight:700;font-family:'IBM Plex Mono',monospace;background:${col}18;color:${col};border:1px solid ${col}33">${lbl}</span>`;
   };
@@ -1285,6 +1289,8 @@ function _renderDecisionMakers(d, scan) {
                     <td style="padding:10px 14px;vertical-align:middle">
                       <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:${c.valid&&c.confidence>=90?'#4ade80':'var(--text)'}">${esc(c.email)}</div>
                       ${c.reason?`<div style="font-size:9px;color:var(--text3);margin-top:2px;line-height:1.3">${esc(c.reason.slice(0,50))}</div>`:''}
+                      ${c.source_url?`<a href="${esc(c.source_url)}" target="_blank" rel="noopener"
+                        style="font-size:9px;color:var(--accent2);text-decoration:none;margin-top:2px;display:inline-block">↗ verify source</a>`:''}
                     </td>
                     <td style="padding:10px 14px;vertical-align:middle">
                       ${c.name?`<div style="font-size:12px;font-weight:600;color:var(--text)">${esc(c.name)}</div>`:''}
@@ -3308,6 +3314,30 @@ async function runEmailFinder() {
   }
 
   try {
+    // Real contact data first (Hunter.io) — carries verified source_url links
+    let hunterContacts = [];
+    let hunterPattern = null;
+    try {
+      const hr = await fetch('/api/contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain })
+      });
+      const hd = await hr.json();
+      hunterPattern = hd?.pattern || null;
+      hunterContacts = (hd?.contacts || []).map(c => ({
+        email: c.email,
+        name: c.name,
+        role: c.role,
+        valid: c.verified,
+        confidence: typeof c.confidence === 'number' ? c.confidence : 50,
+        reason: c.sources_count ? `Found on ${c.sources_count} public page(s)` : 'Hunter.io',
+        source: 'hunter',
+        source_url: c.source_url,
+        accept_all: c.accept_all,
+      }));
+    } catch {}
+
     const r = await fetch('/api/find-emails', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3315,6 +3345,15 @@ async function runEmailFinder() {
     });
     const data = await r.json();
     if (data.error) throw new Error(data.error);
+
+    // Merge Hunter rows on top, skip duplicates already covered by Hunter
+    const seen = new Set(hunterContacts.map(c => c.email.toLowerCase()));
+    const merged = [...hunterContacts, ...(data.contacts || []).filter(c => !seen.has((c.email||'').toLowerCase()))];
+    merged.sort((a, b) => { if (a.valid !== b.valid) return a.valid ? -1 : 1; return (b.confidence||0) - (a.confidence||0); });
+    data.contacts = merged;
+    data.total_checked = merged.length;
+    data.email_pattern = data.email_pattern || hunterPattern;
+
     window._emailFinderResults = data;
     // Re-render into the actual tab content container
     const tabEl = document.getElementById('tabContent');

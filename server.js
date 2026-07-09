@@ -5,6 +5,7 @@ const fs    = require('fs');
 const path  = require('path');
 const url   = require('url');
 const crypto = require('crypto');
+const providers = require('./providers');
 
 // ── Built-in .env loader — no dotenv npm package needed ──────────────
 // Reads .env file from same directory and sets process.env variables
@@ -1087,13 +1088,18 @@ VAPT(Network/Web App/Mobile/API/Cloud AWS-Azure-GCP/IoT/Source Code/Red Team/Wir
 
 
 // ── GEMINI CALL ─────────────────────────────────────────────────────
-function callGemini(system, user, cb, _attempt) {
+function callGemini(system, user, cb, _attempt, genOpts) {
   _attempt = _attempt || 0;
-  const payload = JSON.stringify({
-    contents:[{role:'user',parts:[{text:system+'\n\n---\n\n'+user}]}],
-    // google_search grounding REMOVED — needs paid tier, causes 400 on free keys
-    generationConfig:{temperature:0.15,maxOutputTokens:8192,responseMimeType:'application/json'}
-  });
+  genOpts = genOpts || {};
+  const gen = { temperature:0.15, maxOutputTokens:8192 };
+  const payload = JSON.stringify(
+    genOpts.grounded
+      ? { contents:[{role:'user',parts:[{text:system+'\n\n---\n\n'+user}]}],
+          tools:[{ google_search:{} }],           // real Google, returns cited URLs
+          generationConfig: gen }                 // NOTE: no responseMimeType with grounding
+      : { contents:[{role:'user',parts:[{text:system+'\n\n---\n\n'+user}]}],
+          generationConfig:{ ...gen, responseMimeType:'application/json' } }
+  );
   const key = nextKey();
   const keyShort = (key||'').slice(0,10)+'...';
   const isAuthKey = (key||'').startsWith('AQ.'); // new auth-key format
@@ -1121,13 +1127,13 @@ function callGemini(system, user, cb, _attempt) {
         if (r.statusCode === 403 || r.statusCode === 400) {
           const errSnip = raw.slice(0,120).replace(/\s+/g,' ');
           console.log(`[Gemini] ${r.statusCode} key issue (${keyShort}): ${errSnip}`);
-          if (_attempt < maxAttempts) return setTimeout(() => callGemini(system, user, cb, _attempt + 1), 500);
+          if (_attempt < maxAttempts) return setTimeout(() => callGemini(system, user, cb, _attempt + 1, genOpts), 500);
           return cb(null,{error:{message:`All Gemini keys failed (${r.statusCode}). For new AQ. keys, ensure they're created in AI Studio. Details: ${errSnip}`}});
         }
         if (_attempt < maxAttempts) {
           const delay = r.statusCode === 429 ? (_attempt + 1) * 8000 : 1000;
           console.log(`[Gemini] HTTP ${r.statusCode} — retry ${_attempt+1}/${maxAttempts} in ${delay/1000}s`);
-          return setTimeout(() => callGemini(system, user, cb, _attempt + 1), delay);
+          return setTimeout(() => callGemini(system, user, cb, _attempt + 1, genOpts), delay);
         }
         return cb(null,{error:{message:`Gemini HTTP ${r.statusCode} after ${maxAttempts} retries.`}});
       }
@@ -1136,7 +1142,9 @@ function callGemini(system, user, cb, _attempt) {
         if (p.error) return cb(null,{error:{message:'Gemini: '+p.error.message}});
         const text=(p.candidates?.[0]?.content?.parts||[]).filter(x=>x.text).map(x=>x.text).join('');
         if (!text) return cb(null,{error:{message:'No output. Finish: '+p.candidates?.[0]?.finishReason}});
-        cb(null,{content:[{type:'text',text}]});
+        const gm = p.candidates?.[0]?.groundingMetadata;
+        const sources = (gm?.groundingChunks||[]).map(c => c.web && ({ title:c.web.title, url:c.web.uri })).filter(Boolean);
+        cb(null,{content:[{type:'text',text}], sources});
       } catch(e) { cb(null,{error:{message:'Parse: '+e.message}}); }
     });
   });
@@ -1760,7 +1768,7 @@ Return ONLY this JSON (no other text):
       } catch {
         resolve({ emails_found: [], names_found: [], email_patterns: [], confidence: 'low' });
       }
-    });
+    }, 0, { grounded:true });
   });
 }
 
@@ -2004,6 +2012,35 @@ http.createServer((req, res) => {
         const result = await smtpVerifyEmail(email);
         json(result);
       } catch(e) { json({ error: e.message }, 500); }
+    }); return;
+  }
+
+  // ── REAL CONTACT DATA (Hunter.io) — every row carries a source_url link ──
+  if (pn === '/api/contacts' && req.method === 'POST') {
+    rb(async body => {
+      try {
+        const domain = (body.domain||'').replace(/^https?:\/\//,'').replace(/^www\./,'').split('/')[0];
+        if (!domain) return json({ error:'domain required' }, 400);
+        const h = await providers.hunterDomainSearch(domain, 15);
+        json({
+          domain,
+          organization: h.organization,
+          pattern: h.pattern,
+          accept_all: h.accept_all,           // if true, individual mailboxes can't be confirmed
+          contacts: h.emails,                 // name, role, confidence, source_url, verified
+          provider: h.ok ? 'hunter' : h.reason
+        });
+      } catch(e){ json({ error:e.message }, 500); }
+    }); return;
+  }
+
+  // ── REAL WEB SEARCH (optional Serper fallback) ──
+  if (pn === '/api/search' && req.method === 'POST') {
+    rb(async body => {
+      try {
+        if (!body.q) return json({ error:'q required' }, 400);
+        json(await providers.serperSearch(body.q, body.num||8));
+      } catch(e){ json({ error:e.message }, 500); }
     }); return;
   }
 
@@ -2461,7 +2498,8 @@ console.log('[Analyze] scan_data received:', JSON.stringify(scanBody, null, 2));
             }
             
             const parsed = JSON.parse(cleaned);
-            
+            if (result.sources?.length) parsed.sources = result.sources;
+
             // Build script server-side — guaranteed correct industry
             try {
               parsed.sales_script = buildScript(parsed, _scanRef, _indCat);
@@ -2587,9 +2625,9 @@ if (dns.dkim?.exists) {
 // ======================================================
 
 
-          
+
           json(result);
-        });
+        }, 0, { grounded:true });
       } catch(e){ console.error('[analyze]', e.message); json({error:{message:e.message}},500); }
     }); return;
   }

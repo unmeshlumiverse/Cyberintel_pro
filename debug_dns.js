@@ -1,8 +1,27 @@
 const fs = require('fs');
+const path = require('path');
 const dns = require('dns').promises;
 const https = require('https');
 
-function httpsGet(opts, timeout=8000) { 
+// ── Built-in .env loader — same as server.js, no dotenv package needed ──
+(function loadEnv() {
+  try {
+    const envPath = path.join(__dirname, '.env');
+    if (!fs.existsSync(envPath)) return;
+    const lines = fs.readFileSync(envPath, 'utf8').split('\n');
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx < 1) return;
+      const key = trimmed.slice(0, eqIdx).trim();
+      const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '');
+      if (key && !process.env[key]) process.env[key] = val;
+    });
+  } catch(e) { console.warn('[Env] Could not load .env:', e.message); }
+})();
+
+function httpsGet(opts, timeout=8000) {
     return new Promise((res,rej) => { 
         const req = https.request(opts, r => { 
             let d=''; 
@@ -17,7 +36,7 @@ function httpsGet(opts, timeout=8000) {
     }); 
 }
 
-const MXTOOLBOX_KEY = '82523c16-12f6-4622-b113-62b9e76855af';
+const MXTOOLBOX_KEY = process.env.MXTOOLBOX_KEY || '';
 
 // Paste scanDNS logic below
 async function scanDNS(domain) {
